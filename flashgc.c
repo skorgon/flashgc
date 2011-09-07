@@ -19,10 +19,11 @@
 #include <stdio.h>
 
 #define SDCARDDEV "/dev/block/mmcblk1"
-#define BACKUPFILE "./sdcardMbr.img"
+#define BACKUPFILE "/sdcard/sdcardMbr-backup.img"
 
 int writePartition(const char* pImageFile, const char* pPartition);
 int backupMbr(const char* pPartition, const char* pBackupFile);
+long filesize(FILE* fd);
 
 int main(int argc, char* argv[])
 {
@@ -48,7 +49,10 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
-/* writePartition function as copied from gfree */
+/*
+ * writePartition function copied from gfree and modified to overwrite only
+ * the first 512 bytes of the sd-card at max
+ */
 int writePartition(const char* pImageFile, const char* pPartition)
 {
 	FILE* fdin;
@@ -65,12 +69,19 @@ int writePartition(const char* pImageFile, const char* pPartition)
 		return -1;
 	}
 
+	if (filesize(fdin) > 512) {
+		printf("Error: Gold card image exceeds 512 byte boundary. Aborting.\n");
+		ret = -1;
+		goto cleanup2;
+	}
+
 	fdout = fopen(pPartition, "wb");
 	if (fdout == NULL) {
 		printf("Error opening output partition.\n");
 		ret = -1;
 		goto cleanup2;
 	}
+
 	//  copy the image to the partition
 	while (!feof(fdin)) {
 		ch = fgetc(fdin);
@@ -128,6 +139,7 @@ int backupMbr(const char* pPartition, const char* pBackupFile)
 		ret = -1;
 		goto cleanup2;
 	}
+
 //  create a copy of the partition
 	bytec = 0;
 	while (!feof(fdin) && (bytec < 512)) {
@@ -160,4 +172,17 @@ cleanup2:
 	}
 
 	return ret;
+}
+
+/* Returns the size of file "fd" in bytes */
+long filesize(FILE* fd)
+{
+	long size;
+	long fpi = ftell(fd);
+
+	fseek(fd, 0L, SEEK_END);
+	size = ftell(fd);
+	fseek(fd, fpi, SEEK_SET);
+
+	return size;
 }
