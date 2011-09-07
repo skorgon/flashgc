@@ -17,6 +17,9 @@
  *  The vital parts of this program are copied from gfree.
  */
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <limits.h>
 
 #define SDCARDDEV "/dev/block/mmcblk1"
 #define BACKUPFILE "/sdcard/sdcardMbr-backup.img"
@@ -27,21 +30,47 @@ long filesize(FILE* fd);
 
 int main(int argc, char* argv[])
 {
+	char* imgIn;
+	char* imgOut;
+	int doBackup = 1;
+
 	if (argc != 2) {
 		printf("ERROR: Missing argument.\n");
 		printf("Usage:\n\t%s <goldcard.img>\n", argv[0]);
 		return -1;
 	}
 
-	if (backupMbr(SDCARDDEV, BACKUPFILE)) {
-		printf("Error backing up the sd-cards MBR.\n");
+	/*
+	 * Check if the image path given on the command line is identical to
+	 * the proposed backup path. If so, assume a backup restore and skip
+	 * creating a backup.
+	 */
+	imgIn = realpath(argv[1], NULL);
+	imgOut = realpath(BACKUPFILE, NULL);
+	if (imgIn == NULL) {
+		printf("Input image \"%s\" not found.\n", argv[1]);
 		return -1;
 	}
-	printf("Success: Creating backup \"%s\".\n", argv[1]);
+	if (imgOut != NULL) {
+		if (!strcmp(imgIn, imgOut)) {
+			printf("Restoring backup image.\n");
+			doBackup = 0;
+		}
+		free(imgOut);
+	}
+	free(imgIn);
+
+	if (doBackup) {
+		if (backupMbr(SDCARDDEV, BACKUPFILE)) {
+			printf("Error backing up the sd-cards MBR.\n");
+			return -1;
+		}
+		printf("Success: Creating backup \"%s\".\n", BACKUPFILE);
+	}
 
 	if (writePartition(argv[1], SDCARDDEV)) {
 		printf
-		    ("Error writing the goldcard image to sd-card. SDcard may be corrupted. :(\n");
+		    ("Error writing the image to sd-card. SDcard may be corrupted. :(\n");
 		return -1;
 	}
 	printf("Success: Writing image \"%s\" to sdcard.\n", argv[1]);
