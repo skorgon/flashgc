@@ -48,7 +48,7 @@ int main(int argc, char* argv[])
 	imgIn = realpath(argv[1], NULL);
 	imgOut = realpath(BACKUPFILE, NULL);
 	if (imgIn == NULL) {
-		printf("Input image \"%s\" not found.\n", argv[1]);
+		printf("ERROR: Input image \"%s\" not found.\n", argv[1]);
 		return -1;
 	}
 	if (imgOut != NULL) {
@@ -62,18 +62,18 @@ int main(int argc, char* argv[])
 
 	if (doBackup) {
 		if (backupMbr(SDCARDDEV, BACKUPFILE)) {
-			printf("Error backing up the sd-cards MBR.\n");
+			printf("ERROR: Backing up the sd-card's MBR failed.\n");
 			return -1;
 		}
-		printf("Success: Creating backup \"%s\".\n", BACKUPFILE);
+		printf("Success: Backup file \"%s\" has been created.\n", BACKUPFILE);
 	}
 
 	if (writePartition(argv[1], SDCARDDEV)) {
 		printf
-		    ("Error writing the image to sd-card. SDcard may be corrupted. :(\n");
+		    ("ERROR: Writing the image to sd-card failed. SD-card may be corrupted. :(\n");
 		return -1;
 	}
-	printf("Success: Writing image \"%s\" to sdcard.\n", argv[1]);
+	printf("Success: Image \"%s\" has been written to sd-card.\n", argv[1]);
 
 	return 0;
 }
@@ -94,19 +94,19 @@ int writePartition(const char* pImageFile, const char* pPartition)
 
 	fdin = fopen(pImageFile, "rb");
 	if (fdin == NULL) {
-		printf("Error opening input image.\n");
+		printf("ERROR: Opening input image failed.\n");
 		return -1;
 	}
 
 	if (filesize(fdin) > 512) {
-		printf("Error: Gold card image exceeds 512 byte boundary. Aborting.\n");
+		printf("ERROR: Image exceeds 512 byte boundary.\n");
 		ret = -1;
 		goto cleanup2;
 	}
 
 	fdout = fopen(pPartition, "wb");
 	if (fdout == NULL) {
-		printf("Error opening output partition.\n");
+		printf("ERROR: Opening output partition failed.\n");
 		ret = -1;
 		goto cleanup2;
 	}
@@ -115,14 +115,14 @@ int writePartition(const char* pImageFile, const char* pPartition)
 	while (!feof(fdin)) {
 		ch = fgetc(fdin);
 		if (ferror(fdin)) {
-			printf("Error reading input image.\n");
+			printf("ERROR: Reading from input image failed.\n");
 			ret = 1;
 			goto cleanup1;
 		}
 		if (!feof(fdin))
 			fputc(ch, fdout);
 		if (ferror(fdout)) {
-			printf("Error writing output partition.\n");
+			printf("ERROR: Writing to output partition failed.\n");
 			ret = 1;
 			goto cleanup1;
 		}
@@ -130,13 +130,13 @@ int writePartition(const char* pImageFile, const char* pPartition)
 
 cleanup1:
 	if (fclose(fdout) == EOF) {
-		printf("Error closing output partition.\n");
+		printf("ERROR: Closing output partition failed.\n");
 		ret = 1;
 	}
 
 cleanup2:
 	if (fclose(fdin) == EOF) {
-		printf("Error closing input image.\n");
+		printf("ERROR: Closing input image failed.\n");
 		ret = 1;
 	}
 
@@ -158,13 +158,13 @@ int backupMbr(const char* pPartition, const char* pBackupFile)
 	printf("Backing up sd-card MBR (%s) to \"%s\" ...\n", pPartition, pBackupFile);
 	fdin = fopen(pPartition, "rb");
 	if (fdin == NULL) {
-		printf("Error opening input partition.\n");
+		printf("ERROR: Opening input partition failed.\n");
 		return -1;
 	}
 
 	fdout = fopen(pBackupFile, "wb");
 	if (fdout == NULL) {
-		printf("Error opening backup file.\n");
+		printf("ERROR: Opening backup file failed.\n");
 		ret = -1;
 		goto cleanup2;
 	}
@@ -174,14 +174,14 @@ int backupMbr(const char* pPartition, const char* pBackupFile)
 	while (!feof(fdin) && (bytec < 512)) {
 		ch = fgetc(fdin);
 		if (ferror(fdin)) {
-			printf("Error reading input partition.\n");
+			printf("ERROR: Reading from input partition failed.\n");
 			ret = 1;
 			goto cleanup1;
 		}
 		if (!feof(fdin))
 			fputc(ch, fdout);
 		if (ferror(fdout)) {
-			printf("Error writing backup file.\n");
+			printf("ERROR: Writing to backup file failed.\n");
 			ret = 1;
 			goto cleanup1;
 		}
@@ -190,13 +190,13 @@ int backupMbr(const char* pPartition, const char* pBackupFile)
 
 cleanup1:
 	if (fclose(fdout) == EOF) {
-		printf("Error closing backup file.\n");
+		printf("ERROR: Closing backup file failed.\n");
 		ret = 1;
 	}
 
 cleanup2:
 	if (fclose(fdin) == EOF) {
-		printf("Error closing input partition.\n");
+		printf("ERROR: Closing input partition failed.\n");
 		ret = 1;
 	}
 
