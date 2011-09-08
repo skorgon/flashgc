@@ -22,7 +22,7 @@
 #include <limits.h>
 
 #define SDCARDDEV "/dev/block/mmcblk1"
-#define BACKUPFILE "/sdcard/sdcardMbr-backup.img"
+#define BACKUPFILE "./sdcardMbr-backup.img"
 
 int writePartition(const char* pImageFile, const char* pPartition);
 int backupMbr(const char* pPartition, const char* pBackupFile);
