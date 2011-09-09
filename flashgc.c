@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include "gopt.h"
 
 #define SDCARDDEV "/dev/block/mmcblk1"
 #define BACKUPFILE "./sdcardMbr-backup.img"
@@ -27,16 +28,43 @@
 int writePartition(const char* pImageFile, const char* pPartition);
 int backupMbr(const char* pPartition, const char* pBackupFile);
 long filesize(FILE* fd);
+void printHelp(const char* exec);
+int reverseCid(const char* cidFile);
 
-int main(int argc, char* argv[])
+int main(int argc, const char* argv[])
 {
 	char* imgIn;
 	char* imgOut;
 	int doBackup = 1;
 
+	void* options = gopt_sort(&argc, argv, gopt_start(
+				gopt_option('h', 0, gopt_shorts('h'), gopt_longs("help")),
+				gopt_option('c', GOPT_ARG, gopt_shorts('c'), gopt_longs("cid", "CID")),
+				gopt_option('r', 0, gopt_shorts('r'), gopt_longs("restore"))
+				));
+
+	/* print help text and exit if help option is given */
+	if (gopt(options, 'h')) {
+		printHelp(argv[0]);
+		return 0;
+	}
+
+	/* skip the backup process if restore option is given */
+	if (gopt(options, 'r')) {
+		doBackup = 0;
+	}
+
+	/* read CID if cid option valid */
+	if (gopt_arg(options, 'c', &imgIn)) {
+		return reverseCid(imgIn);
+	}
+
+	gopt_free(options);
+
+
 	if (argc != 2) {
 		printf("ERROR: Missing argument.\n");
-		printf("Usage:\n\t%s <goldcard.img>\n", argv[0]);
+		printHelp(argv[0]);
 		return -1;
 	}
 
@@ -52,13 +80,14 @@ int main(int argc, char* argv[])
 		return -1;
 	}
 	if (imgOut != NULL) {
-		if (!strcmp(imgIn, imgOut)) {
-			printf("Restoring backup image.\n");
+		if (!strcmp(imgIn, imgOut))
 			doBackup = 0;
-		}
 		free(imgOut);
 	}
 	free(imgIn);
+
+	if (!doBackup)
+		printf("Restoring backup image.\n");
 
 	if (doBackup) {
 		if (backupMbr(SDCARDDEV, BACKUPFILE)) {
@@ -214,4 +243,49 @@ long filesize(FILE* fd)
 	fseek(fd, fpi, SEEK_SET);
 
 	return size;
+}
+
+void printHelp(const char* exec)
+{
+	printf("Usage:\n\t%s [options] <goldcard.img>\n", exec);
+	printf("Options:\n");
+	printf("\t--help\t\tPrint this help message and exit.\n");
+	printf("\t--cid <cid>\tRead CID from file <cid> and print reversed CID.\n");
+	printf("\t--restore\tRestore an backup.\n");
+}
+
+int reverseCid(const char* cidFile)
+{
+	FILE* fdin;
+	char buf[100];
+	char* ch;
+
+	fdin = fopen(cidFile, "r");
+	if (fdin == NULL) {
+		printf("ERROR: Opening CID file failed.\n");
+		return -1;
+	}
+
+	fgets(buf, 100, fdin);
+	ch = buf;
+	while ((*ch != '\0') && (*ch != '\n'))
+		ch++;
+	if (*ch == '\n')
+		*ch = '\0';
+
+	printf("CID          = %s\n", buf);
+	printf("Reversed CID = ");
+	while(ch > buf) {
+		ch--;
+		printf("%c%c", *(ch-1), *ch);
+		ch--;
+	}
+	printf("\n");
+
+	if (fclose(fdin) == EOF) {
+		printf("ERROR: Closing CID file failed.\n");
+		return -1;
+	}
+
+	return 0;
 }

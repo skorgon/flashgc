@@ -4,7 +4,9 @@ LD  = ${CC}
 CFLAGS   = -Wall -static -O2 -march=armv7-a -mcpu=cortex-a8 -mfpu=neon-fp16 -ftree-vectorize
 LDFLAGS  = ${CFLAGS}
 
-SOURCES = flashgc.c
+SYMBOLS = -DUSE_SYSEXITS
+
+SOURCES = flashgc.c gopt.c
 OBJECTS = $(addsuffix .o, $(basename ${SOURCES}))
 TARGET_BIN = $(word 1, $(basename ${SOURCES}))
 
