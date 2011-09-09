@@ -117,6 +117,7 @@ int writePartition(const char* pImageFile, const char* pPartition)
 	FILE* fdout;
 	char ch;
 	int ret = 0;
+	int bytec;
 
 	printf("Writing image \"%s\" to sd-card (%s) ...\n", pImageFile,
 	       pPartition);
@@ -141,7 +142,8 @@ int writePartition(const char* pImageFile, const char* pPartition)
 	}
 
 	//  copy the image to the partition
-	while (!feof(fdin)) {
+	bytec = 0;
+	while (!feof(fdin) && (bytec < 512)) {
 		ch = fgetc(fdin);
 		if (ferror(fdin)) {
 			printf("ERROR: Reading from input image failed.\n");
@@ -155,6 +157,7 @@ int writePartition(const char* pImageFile, const char* pPartition)
 			ret = 1;
 			goto cleanup1;
 		}
+		bytec++;
 	}
 
 cleanup1:
