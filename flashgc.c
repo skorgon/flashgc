@@ -23,7 +23,7 @@
 #include "gopt.h"
 
 #define SDCARDDEV "/dev/block/mmcblk1"
-#define BACKUPFILE "./sdcardMbr-backup.img"
+#define DEFBACKUPFILE "./sdcardMbr-backup.img"
 
 int writePartition(const char* pImageFile, const char* pPartition);
 int backupMbr(const char* pPartition, const char* pBackupFile);
@@ -36,36 +36,41 @@ int main(int argc, const char* argv[])
 	char* imgIn;
 	char* imgOut;
 	int doBackup = 1;
+	int ret = 0;
+	char* backupFile;
 
 	void* options = gopt_sort(&argc, argv, gopt_start(
 				gopt_option('h', 0, gopt_shorts('h'), gopt_longs("help")),
 				gopt_option('c', GOPT_ARG, gopt_shorts('c'), gopt_longs("cid", "CID")),
+				gopt_option('b', GOPT_ARG, gopt_shorts('b'), gopt_longs("backupfile")),
 				gopt_option('r', 0, gopt_shorts('r'), gopt_longs("restore"))
 				));
 
 	/* print help text and exit if help option is given */
 	if (gopt(options, 'h')) {
 		printHelp(argv[0]);
-		return 0;
-	}
-
-	/* skip the backup process if restore option is given */
-	if (gopt(options, 'r')) {
-		doBackup = 0;
+		goto cleanup;
 	}
 
 	/* read CID if cid option valid */
 	if (gopt_arg(options, 'c', &imgIn)) {
-		return reverseCid(imgIn);
+		ret = reverseCid(imgIn);
+		goto cleanup;
 	}
 
-	gopt_free(options);
+	/* skip the backup process if restore option is given */
+	if (gopt(options, 'r'))
+		doBackup = 0;
 
+	/* Get backup file name from command line option or set default */
+	if (!gopt_arg(options, 'b', &backupFile))
+		backupFile = DEFBACKUPFILE;
 
 	if (argc != 2) {
 		printf("ERROR: Missing argument.\n");
 		printHelp(argv[0]);
-		return -1;
+		ret = -1;
+		goto cleanup;
 	}
 
 	/*
@@ -74,10 +79,11 @@ int main(int argc, const char* argv[])
 	 * creating a backup.
 	 */
 	imgIn = realpath(argv[1], NULL);
-	imgOut = realpath(BACKUPFILE, NULL);
+	imgOut = realpath(backupFile, NULL);
 	if (imgIn == NULL) {
 		printf("ERROR: Input image \"%s\" not found.\n", argv[1]);
-		return -1;
+		ret = -1;
+		goto cleanup;
 	}
 	if (imgOut != NULL) {
 		if (!strcmp(imgIn, imgOut))
@@ -86,25 +92,28 @@ int main(int argc, const char* argv[])
 	}
 	free(imgIn);
 
-	if (!doBackup)
+	if (!doBackup) {
 		printf("Restoring backup image.\n");
-
-	if (doBackup) {
-		if (backupMbr(SDCARDDEV, BACKUPFILE)) {
+	} else {
+		if (backupMbr(SDCARDDEV, backupFile)) {
 			printf("ERROR: Backing up the sd-card's MBR failed.\n");
-			return -1;
+			ret = -1;
+			goto cleanup;
 		}
-		printf("Success: Backup file \"%s\" has been created.\n", BACKUPFILE);
+		printf("Success: Backup file \"%s\" has been created.\n", backupFile);
 	}
 
 	if (writePartition(argv[1], SDCARDDEV)) {
 		printf
 		    ("ERROR: Writing the image to sd-card failed. SD-card may be corrupted. :(\n");
-		return -1;
+		ret = -1;
+		goto cleanup;
 	}
 	printf("Success: Image \"%s\" has been written to sd-card.\n", argv[1]);
 
-	return 0;
+cleanup:
+	gopt_free(options);
+	return ret;
 }
 
 /*
@@ -254,6 +263,7 @@ void printHelp(const char* exec)
 	printf("Options:\n");
 	printf("\t--help\t\tPrint this help message and exit.\n");
 	printf("\t--cid <cid>\tRead CID from file <cid> and print reversed CID.\n");
+	printf("\t--backupfile <file>\tSpecify a path and file for the backup.\n");
 	printf("\t--restore\tRestore an backup.\n");
 }
 
