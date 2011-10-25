@@ -19,31 +19,37 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <limits.h>
 #include "gopt.h"
+#include "gcgen.h"
 
-#define SDCARDDEV "/dev/block/mmcblk1"
-#define DEFBACKUPFILE "./sdcardMbr-backup.img"
+#define SDCARDDEV	"/dev/block/mmcblk1"
+#define DEFBACKUPFILE	"./sdcardMbr-backup.img"
+#define DEFCIDPATH	"fixme"
 
-int writePartition(const char* pImageFile, const char* pPartition);
+int writePartition(uint8_t* buf, int bufSize, const char* pPartition);
 int backupMbr(const char* pPartition, const char* pBackupFile);
 long filesize(FILE* fd);
 void printHelp(const char* exec);
-int reverseCid(const char* cidFile);
+int reverseCid(const char* cidFile, uint8_t* cid);
 
 int main(int argc, const char* argv[])
 {
-	char* imgIn;
-	char* imgOut;
-	int doBackup = 1;
+	int restore = 0;
 	int ret = 0;
 	char* backupFile;
+	uint8_t cid[0x18];
+	char* cidPath;
+	uint8_t* gcbuf;
+	int gcSize = 0;
 
 	void* options = gopt_sort(&argc, argv, gopt_start(
 				gopt_option('h', 0, gopt_shorts('h'), gopt_longs("help")),
 				gopt_option('c', GOPT_ARG, gopt_shorts('c'), gopt_longs("cid", "CID")),
 				gopt_option('b', GOPT_ARG, gopt_shorts('b'), gopt_longs("backupfile")),
-				gopt_option('r', 0, gopt_shorts('r'), gopt_longs("restore"))
+				gopt_option('d', 0, gopt_shorts('d'), gopt_longs("dumpgc")),
+				gopt_option('r', GOPT_ARG, gopt_shorts('r'), gopt_longs("restore"))
 				));
 
 	/* print help text and exit if help option is given */
@@ -52,64 +58,65 @@ int main(int argc, const char* argv[])
 		goto cleanup;
 	}
 
-	/* read CID if cid option valid */
-	if (gopt_arg(options, 'c', &imgIn)) {
-		ret = reverseCid(imgIn);
-		goto cleanup;
-	}
-
-	/* skip the backup process if restore option is given */
-	if (gopt(options, 'r'))
-		doBackup = 0;
-
-	/* Get backup file name from command line option or set default */
-	if (!gopt_arg(options, 'b', &backupFile))
+	/* restore backup if restore option is given */
+	if (gopt_arg(options, 'r', &backupFile)) {
+		restore = 1;
+	} else if (!gopt_arg(options, 'b', &backupFile)) {
+		/* Get backup file name from command line option or set default */
 		backupFile = DEFBACKUPFILE;
-
-	if (argc != 2) {
-		printf("ERROR: Missing argument.\n");
-		printHelp(argv[0]);
-		ret = -1;
-		goto cleanup;
 	}
 
-	/*
-	 * Check if the image path given on the command line is identical to
-	 * the proposed backup path. If so, assume a backup restore and skip
-	 * creating a backup.
-	 */
-	imgIn = realpath(argv[1], NULL);
-	imgOut = realpath(backupFile, NULL);
-	if (imgIn == NULL) {
-		printf("ERROR: Input image \"%s\" not found.\n", argv[1]);
-		ret = -1;
-		goto cleanup;
-	}
-	if (imgOut != NULL) {
-		if (!strcmp(imgIn, imgOut))
-			doBackup = 0;
-		free(imgOut);
-	}
-	free(imgIn);
-
-	if (!doBackup) {
-		printf("Restoring backup image.\n");
+	if (restore) {
+		printf("Restoring backup image from \"%s\".\n", backupFile);
+		/* Actual a restore!! */
+		if (backupMbr(backupFile, SDCARDDEV)) {
+			printf("ERROR: Restoring the backup failed. SD-card may be corrupted.\n");
+			ret = -1;
+			goto cleanup;
+		}
+		printf("SUCCESS: Backup restored.\n");
 	} else {
+		/* Get sdcard CID */
+		if (!gopt_arg(options, 'c', &cidPath))
+			cidPath = DEFCIDPATH;
+		if ((ret = reverseCid(cidPath, cid)))
+			goto cleanup;
+
+		/* Generate the gold card image */
+		genGc(cid, 0, &gcbuf, &gcSize);
+
+		/* Dump gc image if requested */
+		if (gopt(options, 'd')) {
+			printf("Dumping gold-card image to file \"goldcard.img\".\n");
+			FILE* fout = fopen("goldcard.img", "wb");
+			if (fout == NULL) {
+				printf("ERROR: Unable to open file \"goldcard.img\".\n");
+			} else {
+				int i;
+				for (i = 0; i < gcSize; i++)
+					fputc(gcbuf[i], fout);
+				fclose(fout);
+			}
+		}
+
+		/* Create backup of sdcard MBR */
+		printf("Backing up sd-card MBR to file \"%s\".\n", backupFile);
 		if (backupMbr(SDCARDDEV, backupFile)) {
 			printf("ERROR: Backing up the sd-card's MBR failed.\n");
 			ret = -1;
 			goto cleanup;
 		}
-		printf("Success: Backup file \"%s\" has been created.\n", backupFile);
-	}
 
-	if (writePartition(argv[1], SDCARDDEV)) {
-		printf
-		    ("ERROR: Writing the image to sd-card failed. SD-card may be corrupted. :(\n");
-		ret = -1;
-		goto cleanup;
+		/* Write gold-card to sd-card */
+		printf("Making sd-card golden.\n");
+		if (writePartition(gcbuf, gcSize, SDCARDDEV)) {
+			printf
+			    ("ERROR: Writing to sd-card failed. SD-card may be corrupted. :(\n");
+			ret = -1;
+			goto cleanup;
+		}
+		printf("SUCCESS: SD-card is golden.\n");
 	}
-	printf("Success: Image \"%s\" has been written to sd-card.\n", argv[1]);
 
 cleanup:
 	gopt_free(options);
@@ -120,64 +127,37 @@ cleanup:
  * writePartition function copied from gfree and modified to overwrite only
  * the first 512 bytes of the sd-card at max
  */
-int writePartition(const char* pImageFile, const char* pPartition)
+int writePartition(uint8_t* buf, int bufSize, const char* pPartition)
 {
-	FILE* fdin;
+	int i;
 	FILE* fdout;
-	char ch;
 	int ret = 0;
-	int bytec;
 
-	printf("Writing image \"%s\" to sd-card (%s) ...\n", pImageFile,
-	       pPartition);
+	printf("Writing gold-card to sd-card (%s) ...\n", pPartition);
 
-	fdin = fopen(pImageFile, "rb");
-	if (fdin == NULL) {
-		printf("ERROR: Opening input image failed.\n");
-		return -1;
-	}
-
-	if (filesize(fdin) > 512) {
+	if (bufSize > 512) {
 		printf("ERROR: Image exceeds 512 byte boundary.\n");
-		ret = -1;
-		goto cleanup2;
+		return -1;
 	}
 
 	fdout = fopen(pPartition, "wb");
 	if (fdout == NULL) {
 		printf("ERROR: Opening output partition failed.\n");
-		ret = -1;
-		goto cleanup2;
+		return -1;
 	}
 
 	//  copy the image to the partition
-	bytec = 0;
-	while (!feof(fdin) && (bytec < 512)) {
-		ch = fgetc(fdin);
-		if (ferror(fdin)) {
-			printf("ERROR: Reading from input image failed.\n");
-			ret = 1;
-			goto cleanup1;
-		}
-		if (!feof(fdin))
-			fputc(ch, fdout);
+	for (i = 0; i < bufSize; i++) {
+		fputc(buf[i], fdout);
 		if (ferror(fdout)) {
 			printf("ERROR: Writing to output partition failed.\n");
 			ret = 1;
-			goto cleanup1;
+			break;
 		}
-		bytec++;
 	}
 
-cleanup1:
 	if (fclose(fdout) == EOF) {
 		printf("ERROR: Closing output partition failed.\n");
-		ret = 1;
-	}
-
-cleanup2:
-	if (fclose(fdin) == EOF) {
-		printf("ERROR: Closing input image failed.\n");
 		ret = 1;
 	}
 
@@ -196,16 +176,15 @@ int backupMbr(const char* pPartition, const char* pBackupFile)
 	int bytec;
 	int ret = 0;
 
-	printf("Backing up sd-card MBR (%s) to \"%s\" ...\n", pPartition, pBackupFile);
 	fdin = fopen(pPartition, "rb");
 	if (fdin == NULL) {
-		printf("ERROR: Opening input partition failed.\n");
+		printf("ERROR: Opening input file failed.\n");
 		return -1;
 	}
 
 	fdout = fopen(pBackupFile, "wb");
 	if (fdout == NULL) {
-		printf("ERROR: Opening backup file failed.\n");
+		printf("ERROR: Opening output file failed.\n");
 		ret = -1;
 		goto cleanup2;
 	}
@@ -215,14 +194,14 @@ int backupMbr(const char* pPartition, const char* pBackupFile)
 	while (!feof(fdin) && (bytec < 512)) {
 		ch = fgetc(fdin);
 		if (ferror(fdin)) {
-			printf("ERROR: Reading from input partition failed.\n");
+			printf("ERROR: Reading from input file failed.\n");
 			ret = 1;
 			goto cleanup1;
 		}
 		if (!feof(fdin))
 			fputc(ch, fdout);
 		if (ferror(fdout)) {
-			printf("ERROR: Writing to backup file failed.\n");
+			printf("ERROR: Writing to output file failed.\n");
 			ret = 1;
 			goto cleanup1;
 		}
@@ -231,30 +210,17 @@ int backupMbr(const char* pPartition, const char* pBackupFile)
 
 cleanup1:
 	if (fclose(fdout) == EOF) {
-		printf("ERROR: Closing backup file failed.\n");
+		printf("ERROR: Closing output file failed.\n");
 		ret = 1;
 	}
 
 cleanup2:
 	if (fclose(fdin) == EOF) {
-		printf("ERROR: Closing input partition failed.\n");
+		printf("ERROR: Closing input file failed.\n");
 		ret = 1;
 	}
 
 	return ret;
-}
-
-/* Returns the size of file "fd" in bytes */
-long filesize(FILE* fd)
-{
-	long size;
-	long fpi = ftell(fd);
-
-	fseek(fd, 0L, SEEK_END);
-	size = ftell(fd);
-	fseek(fd, fpi, SEEK_SET);
-
-	return size;
 }
 
 void printHelp(const char* exec)
@@ -262,16 +228,18 @@ void printHelp(const char* exec)
 	printf("Usage:\n\t%s [options] <goldcard.img>\n", exec);
 	printf("Options:\n");
 	printf("\t--help\t\tPrint this help message and exit.\n");
-	printf("\t--cid <cid>\tRead CID from file <cid> and print reversed CID.\n");
+	printf("\t--cid <cid>\tRead CID from file <cid>.\n");
 	printf("\t--backupfile <file>\tSpecify a path and file for the backup.\n");
-	printf("\t--restore\tRestore an backup.\n");
+	printf("\t--restore <backup image>\tRestore backup image to sd-card.\n");
+	printf("\t--dumpgc\tDump gold-card image to a file.\n");
 }
 
-int reverseCid(const char* cidFile)
+int reverseCid(const char* cidFile, uint8_t* cid)
 {
 	FILE* fdin;
-	char buf[100];
+	char buf[0x18*2 + 1];
 	char* ch;
+	int i = 0;
 
 	fdin = fopen(cidFile, "r");
 	if (fdin == NULL) {
@@ -279,21 +247,16 @@ int reverseCid(const char* cidFile)
 		return -1;
 	}
 
-	fgets(buf, 100, fdin);
+	fgets(buf, 0x18*2 + 1, fdin);
 	ch = buf;
 	while ((*ch != '\0') && (*ch != '\n'))
 		ch++;
-	if (*ch == '\n')
-		*ch = '\0';
 
-	printf("CID          = %s\n", buf);
-	printf("Reversed CID = ");
 	while(ch > buf) {
-		ch--;
-		printf("%c%c", *(ch-1), *ch);
-		ch--;
+		*ch = '\0';
+		ch -= 2;
+		cid[i++] = strtol(ch, NULL, 16);
 	}
-	printf("\n");
 
 	if (fclose(fdin) == EOF) {
 		printf("ERROR: Closing CID file failed.\n");
