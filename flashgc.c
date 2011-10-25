@@ -26,7 +26,7 @@
 
 #define SDCARDDEV	"/dev/block/mmcblk1"
 #define DEFBACKUPFILE	"./sdcardMbr-backup.img"
-#define DEFCIDPATH	"fixme"
+#define DEFCIDPATH	"/sys/block/mmcblk1/device/cid"
 
 int writePartition(uint8_t* buf, int bufSize, const char* pPartition);
 int backupMbr(const char* pPartition, const char* pBackupFile);
@@ -225,13 +225,13 @@ cleanup2:
 
 void printHelp(const char* exec)
 {
-	printf("Usage:\n\t%s [options] <goldcard.img>\n", exec);
+	printf("Usage:\n\t%s [options]\n", exec);
 	printf("Options:\n");
-	printf("\t--help\t\tPrint this help message and exit.\n");
-	printf("\t--cid <cid>\tRead CID from file <cid>.\n");
-	printf("\t--backupfile <file>\tSpecify a path and file for the backup.\n");
+	printf("\t--help\t\t\t\tPrint this help message and exit.\n");
+	printf("\t--cid <cid>\t\t\tRead CID from file <cid>.\n");
+	printf("\t--backupfile <file>\t\tSpecify a path and file for the backup.\n");
 	printf("\t--restore <backup image>\tRestore backup image to sd-card.\n");
-	printf("\t--dumpgc\tDump gold-card image to a file.\n");
+	printf("\t--dumpgc\t\t\tDump gold-card image to a file.\n");
 }
 
 int reverseCid(const char* cidFile, uint8_t* cid)
