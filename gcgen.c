@@ -92,7 +92,7 @@ static const uint8_t val114_table3[] =
 static const uint8_t val84_table1[] =
     {0x40, 0x27, 0x12, 0x51, 0x49, 0x07, 0x1F, 0x38};
 
-uint32_t CalcCRC32HTC(uint8_t* buf, int pos, int filesize, uint32_t nval)
+static uint32_t CalcCRC32HTC(uint8_t* buf, int pos, int filesize, uint32_t nval)
 {
 	uint32_t nCrc32 = nval;
 	while (filesize) {
@@ -105,7 +105,7 @@ uint32_t CalcCRC32HTC(uint8_t* buf, int pos, int filesize, uint32_t nval)
 	return nCrc32;
 }
 
-void HTC3DES(int mode, const uint8_t* key, uint8_t* input, int loopval)
+static void HTC3DES(int mode, const uint8_t* key, uint8_t* input, int loopval)
 {
 	int i;
 	int err;
@@ -134,7 +134,7 @@ void HTC3DES(int mode, const uint8_t* key, uint8_t* input, int loopval)
 	}
 }
 
-uint8_t htccalcval(uint32_t* val)
+static uint8_t htccalcval(uint32_t* val)
 {
 	uint32_t retval;
 	uint32_t aval = 0x343FD;
@@ -145,21 +145,6 @@ uint8_t htccalcval(uint32_t* val)
 	return (uint8_t)retval;
 }
 
-// void cidStr2Ary(const char* in, uint8_t* out)
-// {
-// 	int i;
-// 	char str[3];
-// 
-// 	str[2] = '\0';
-// 
-// 	for (i = 0; i < 16; i++) {
-// 		memcpy(str, in, 2);
-// 		*out = (uint8_t)strtol(str, NULL, 16);
-// 		out++;
-// 		in += 2;
-// 	}
-// }
-
 int genGc(uint8_t* cid_ary, int mode, uint8_t** gcbuf, int* size)
 {
 	int i;
@@ -168,7 +153,6 @@ int genGc(uint8_t* cid_ary, int mode, uint8_t** gcbuf, int* size)
 	uint32_t crc2;
 	uint32_t htcval;
 	uint8_t* goldcardbuf = malloc(GCBUFSIZE);
-// 	uint8_t cid_ary[0x18];
 	uint8_t R4;
 	uint8_t R7;
 	uint8_t R10;
@@ -236,9 +220,6 @@ int genGc(uint8_t* cid_ary, int mode, uint8_t** gcbuf, int* size)
 		deskey1_ary = deskey1_android;
 
 	// Primary init
-// 	for (i = 0; i < 0x18; i++)
-// 		cid_ary[i] = 0;
-// 	cidStr2Ary(cid, cid_ary);
 	cid_ary[0] = 0x00;
 
 	for (i = 0; i < 8; i++)

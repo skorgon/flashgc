@@ -18,9 +18,7 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <stdint.h>
-#include <limits.h>
 #include "gopt.h"
 #include "gcgen.h"
 
@@ -30,7 +28,6 @@
 
 int writePartition(uint8_t* buf, int bufSize, const char* pPartition);
 int backupMbr(const char* pPartition, const char* pBackupFile);
-long filesize(FILE* fd);
 void printHelp(const char* exec);
 int reverseCid(const char* cidFile, uint8_t* cid);
 
